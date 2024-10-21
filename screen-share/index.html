@@ -35,7 +35,6 @@
     <input type="text" id="userId" placeholder="Enter your ID" />
     <button id="startShare">Start Screen Share</button>
     <button id="startView" style="display:none;">Start Viewing</button>
-    <p>Up to date!</p>
     <div id="shareLink">
         <p>Share this link to view your screen: <a href="" id="link"></a></p>
     </div>
@@ -60,7 +59,7 @@
             ]
         };
 
-        function connectWebSocket() {
+        async function connectWebSocket() {
             return new Promise((resolve, reject) => {
                 ws = new WebSocket(signalingServerUrl);
 
@@ -73,6 +72,11 @@
                     console.error('WebSocket error:', error);
                     reject(error);
                 };
+
+                ws.onmessage = async (message) => {
+                    const data = JSON.parse(message.data);
+                    handleMessage(data);
+                };
             });
         }
 
@@ -82,6 +86,37 @@
                 ws.send(JSON.stringify(data));
             } else {
                 console.log('WebSocket not ready, cannot send message yet.');
+            }
+        }
+
+        function handleMessage(data) {
+            if (data.offer) {
+                peerConnection = new RTCPeerConnection(configuration);
+                peerConnection.ontrack = event => {
+                    videoElement.srcObject = event.streams[0];
+                };
+
+                peerConnection.onicecandidate = event => {
+                    if (event.candidate) {
+                        sendWebSocketMessage({ candidate: event.candidate, id: data.id });
+                    }
+                };
+
+                peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
+                    .then(() => peerConnection.createAnswer())
+                    .then(answer => {
+                        return peerConnection.setLocalDescription(answer);
+                    })
+                    .then(() => {
+                        sendWebSocketMessage({ answer, id: data.id });
+                    })
+                    .catch(err => console.error('Error handling offer:', err));
+            } else if (data.answer) {
+                peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
+                    .catch(err => console.error('Error setting remote description:', err));
+            } else if (data.candidate) {
+                peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
+                    .catch(err => console.error('Error adding received ice candidate:', err));
             }
         }
 
@@ -149,32 +184,6 @@
             sendWebSocketMessage({ action: 'join', id: userId });
         });
 
-        ws.onmessage = async message => {
-            const data = JSON.parse(message.data);
-
-            if (data.offer) {
-                peerConnection = new RTCPeerConnection(configuration);
-                peerConnection.ontrack = event => {
-                    videoElement.srcObject = event.streams[0];
-                };
-
-                peerConnection.onicecandidate = event => {
-                    if (event.candidate) {
-                        sendWebSocketMessage({ candidate: event.candidate, id: data.id });
-                    }
-                };
-
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-                const answer = await peerConnection.createAnswer();
-                await peerConnection.setLocalDescription(answer);
-                sendWebSocketMessage({ answer, id: data.id });
-            } else if (data.answer) {
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-            } else if (data.candidate) {
-                await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-            }
-        };
-
         // Automatically join the session if an ID is in the URL
         const params = new URLSearchParams(window.location.search);
         const viewId = params.get('id');
@@ -182,9 +191,13 @@
             connectWebSocket().then(() => {
                 userIdInput.value = viewId;
                 startViewButton.click();
+            }).catch(err => {
+                console.error('Error connecting to WebSocket:', err);
             });
         } else {
-            connectWebSocket(); // Connect WebSocket when page is loaded
+            connectWebSocket().catch(err => {
+                console.error('Error connecting to WebSocket:', err);
+            }); // Connect WebSocket when page is loaded
         }
     </script>
 </body>
