@@ -22,6 +22,10 @@
             margin-top: 20px;
             cursor: pointer;
         }
+        #shareLink {
+            margin-top: 20px;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -31,14 +35,19 @@
     <input type="text" id="userId" placeholder="Enter your ID" />
     <button id="startShare">Start Screen Share</button>
     <button id="startView" style="display:none;">Start Viewing</button>
+    <div id="shareLink">
+        <p>Share this link to view your screen: <a href="" id="link"></a></p>
+    </div>
 
     <script>
         const startShareButton = document.getElementById("startShare");
         const startViewButton = document.getElementById("startView");
         const videoElement = document.getElementById("videoElement");
         const userIdInput = document.getElementById("userId");
+        const shareLink = document.getElementById("shareLink");
+        const linkElement = document.getElementById("link");
 
-        const signalingServerUrl = "wss://supergamer474-screen-share.onrender.com"; // Use your Render URL
+        const signalingServerUrl = "wss://screen-share-m7ua.onrender.com"; // Use your Render URL
         let peerConnection;
         let screenStream;
         const ws = new WebSocket(signalingServerUrl);
@@ -77,6 +86,12 @@
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
                 ws.send(JSON.stringify({ offer, id: userId }));
+
+                // Show the generated link
+                const shareUrl = `${window.location.origin}${window.location.pathname}?id=${userId}`;
+                linkElement.href = shareUrl;
+                linkElement.textContent = shareUrl;
+                shareLink.style.display = 'block';
 
                 startShareButton.style.display = "none";
                 startViewButton.style.display = "inline";
@@ -136,6 +151,14 @@
                 await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
             }
         };
+
+        // Automatically join the session if an ID is in the URL
+        const params = new URLSearchParams(window.location.search);
+        const viewId = params.get('id');
+        if (viewId) {
+            userIdInput.value = viewId;
+            startViewButton.click();
+        }
     </script>
 </body>
 </html>
