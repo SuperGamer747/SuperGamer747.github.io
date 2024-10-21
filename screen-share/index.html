@@ -37,7 +37,6 @@
     <button id="startView" style="display:none;">Start Viewing</button>
     <div id="shareLink">
         <p>Share this link to view your screen: <a href="" id="link"></a></p>
-        IT WORKS!
     </div>
 
     <script>
@@ -48,10 +47,10 @@
         const shareLink = document.getElementById("shareLink");
         const linkElement = document.getElementById("link");
 
-        const signalingServerUrl = "wss://screen-share-m7ua.onrender.com"; // Use your Render URL
+        const signalingServerUrl = "wss://supergamer474-screen-share.onrender.com"; // Updated WebSocket URL
         let peerConnection;
         let screenStream;
-        const ws = new WebSocket(signalingServerUrl);
+        let ws;
 
         // Configuration for STUN server
         const configuration = {
@@ -60,9 +59,30 @@
             ]
         };
 
-        ws.onopen = () => {
-            console.log('Connected to signaling server');
-        };
+        function connectWebSocket() {
+            return new Promise((resolve, reject) => {
+                ws = new WebSocket(signalingServerUrl);
+
+                ws.onopen = () => {
+                    console.log('Connected to signaling server');
+                    resolve(ws);
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    reject(error);
+                };
+            });
+        }
+
+        // Function to send data only when WebSocket is ready
+        function sendWebSocketMessage(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+            } else {
+                console.log('WebSocket not ready, cannot send message yet.');
+            }
+        }
 
         // Start Screen Sharing
         startShareButton.addEventListener("click", async () => {
@@ -71,6 +91,7 @@
                 alert('Please enter your ID');
                 return;
             }
+
             try {
                 screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
                 videoElement.srcObject = screenStream;
@@ -80,13 +101,13 @@
 
                 peerConnection.onicecandidate = event => {
                     if (event.candidate) {
-                        ws.send(JSON.stringify({ candidate: event.candidate, id: userId }));
+                        sendWebSocketMessage({ candidate: event.candidate, id: userId });
                     }
                 };
 
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
-                ws.send(JSON.stringify({ offer, id: userId }));
+                sendWebSocketMessage({ offer, id: userId });
 
                 // Show the generated link
                 const shareUrl = `${window.location.origin}${window.location.pathname}?id=${userId}`;
@@ -98,7 +119,7 @@
                 startViewButton.style.display = "inline";
 
                 // Notify the signaling server about the join
-                ws.send(JSON.stringify({ action: 'join', id: userId }));
+                sendWebSocketMessage({ action: 'join', id: userId });
             } catch (err) {
                 console.error("Error sharing screen:", err);
             }
@@ -119,12 +140,12 @@
 
             peerConnection.onicecandidate = event => {
                 if (event.candidate) {
-                    ws.send(JSON.stringify({ candidate: event.candidate, id: userId }));
+                    sendWebSocketMessage({ candidate: event.candidate, id: userId });
                 }
             };
 
             // Notify the signaling server about the join
-            ws.send(JSON.stringify({ action: 'join', id: userId }));
+            sendWebSocketMessage({ action: 'join', id: userId });
         });
 
         ws.onmessage = async message => {
@@ -138,14 +159,14 @@
 
                 peerConnection.onicecandidate = event => {
                     if (event.candidate) {
-                        ws.send(JSON.stringify({ candidate: event.candidate, id: data.id }));
+                        sendWebSocketMessage({ candidate: event.candidate, id: data.id });
                     }
                 };
 
                 await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
                 const answer = await peerConnection.createAnswer();
                 await peerConnection.setLocalDescription(answer);
-                ws.send(JSON.stringify({ answer, id: data.id }));
+                sendWebSocketMessage({ answer, id: data.id });
             } else if (data.answer) {
                 await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
             } else if (data.candidate) {
@@ -157,8 +178,12 @@
         const params = new URLSearchParams(window.location.search);
         const viewId = params.get('id');
         if (viewId) {
-            userIdInput.value = viewId;
-            startViewButton.click();
+            connectWebSocket().then(() => {
+                userIdInput.value = viewId;
+                startViewButton.click();
+            });
+        } else {
+            connectWebSocket(); // Connect WebSocket when page is loaded
         }
     </script>
 </body>
