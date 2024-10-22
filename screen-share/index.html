@@ -27,9 +27,10 @@
             display: none;
         }
     </style>
+    <link rel="icon" href="data:;base64,iVBORw0KGgo="> <!-- Prevent favicon 404 error -->
 </head>
 <body>
-    <h1>Simple Screen Sharing!</h1>
+    <h1>Simple Screen Sharing</h1>
     <video id="videoElement" autoplay playsinline controls></video>
     <br>
     <input type="text" id="userId" placeholder="Enter your ID" />
@@ -51,6 +52,7 @@
         let peerConnection;
         let screenStream;
         let ws;
+        let iceCandidateQueue = []; // Queue to hold ICE candidates until the remote description is set
 
         // Configuration for STUN server
         const configuration = {
@@ -93,6 +95,7 @@
         function handleMessage(data) {
             if (data.offer) {
                 peerConnection = new RTCPeerConnection(configuration);
+
                 peerConnection.ontrack = event => {
                     videoElement.srcObject = event.streams[0];
                 };
@@ -110,14 +113,29 @@
                     })
                     .then(() => {
                         sendWebSocketMessage({ answer, id: data.id });
+                        // Add queued ICE candidates after setting remote description
+                        while (iceCandidateQueue.length) {
+                            peerConnection.addIceCandidate(iceCandidateQueue.shift());
+                        }
                     })
                     .catch(err => console.error('Error handling offer:', err));
             } else if (data.answer) {
                 peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
+                    .then(() => {
+                        // Add queued ICE candidates after setting remote description
+                        while (iceCandidateQueue.length) {
+                            peerConnection.addIceCandidate(iceCandidateQueue.shift());
+                        }
+                    })
                     .catch(err => console.error('Error setting remote description:', err));
             } else if (data.candidate) {
-                peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
-                    .catch(err => console.error('Error adding received ice candidate:', err));
+                if (peerConnection.remoteDescription) {
+                    peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
+                        .catch(err => console.error('Error adding received ice candidate:', err));
+                } else {
+                    // Queue the ICE candidate if the remote description isn't set yet
+                    iceCandidateQueue.push(new RTCIceCandidate(data.candidate));
+                }
             }
         }
 
