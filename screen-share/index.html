@@ -22,15 +22,18 @@
             margin-top: 20px;
             cursor: pointer;
         }
-        #shareLink {
+        #shareLink, #errorMessage {
             margin-top: 20px;
             display: none;
+        }
+        #errorMessage {
+            color: red;
         }
     </style>
     <link rel="icon" href="data:;base64,iVBORw0KGgo="> <!-- Prevent favicon 404 error -->
 </head>
 <body>
-    <h1>Simple Screen Sharing :)</h1>
+    <h1>Simple Screen Sharing</h1>
     <video id="videoElement" autoplay playsinline controls></video>
     <br>
     <input type="text" id="userId" placeholder="Enter your ID" />
@@ -39,6 +42,7 @@
     <div id="shareLink">
         <p>Share this link to view your screen: <a href="" id="link"></a></p>
     </div>
+    <div id="errorMessage">Error: No active screen sharing found for this ID.</div>
 
     <script>
         const startShareButton = document.getElementById("startShare");
@@ -47,6 +51,7 @@
         const userIdInput = document.getElementById("userId");
         const shareLink = document.getElementById("shareLink");
         const linkElement = document.getElementById("link");
+        const errorMessage = document.getElementById("errorMessage");
 
         const signalingServerUrl = "wss://supergamer474-screen-share.onrender.com"; // Updated WebSocket URL
         let peerConnection;
@@ -93,6 +98,13 @@
         }
 
         function handleMessage(data) {
+            if (data.error) {
+                // Display error if session ID is not found
+                errorMessage.style.display = 'block';
+                videoElement.style.display = 'none';
+                return;
+            }
+
             if (data.offer) {
                 peerConnection = new RTCPeerConnection(configuration);
 
@@ -122,7 +134,6 @@
             } else if (data.answer) {
                 peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
                     .then(() => {
-                        // Add queued ICE candidates after setting remote description
                         while (iceCandidateQueue.length) {
                             peerConnection.addIceCandidate(iceCandidateQueue.shift());
                         }
@@ -133,7 +144,6 @@
                     peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
                         .catch(err => console.error('Error adding received ice candidate:', err));
                 } else {
-                    // Queue the ICE candidate if the remote description isn't set yet
                     iceCandidateQueue.push(new RTCIceCandidate(data.candidate));
                 }
             }
@@ -164,7 +174,6 @@
                 await peerConnection.setLocalDescription(offer);
                 sendWebSocketMessage({ offer, id: userId });
 
-                // Show the generated link
                 const shareUrl = `${window.location.origin}${window.location.pathname}?id=${userId}`;
                 linkElement.href = shareUrl;
                 linkElement.textContent = shareUrl;
@@ -173,14 +182,12 @@
                 startShareButton.style.display = "none";
                 startViewButton.style.display = "inline";
 
-                // Notify the signaling server about the join
                 sendWebSocketMessage({ action: 'join', id: userId });
             } catch (err) {
                 console.error("Error sharing screen:", err);
             }
         });
 
-        // Start Viewing the shared screen
         startViewButton.addEventListener("click", () => {
             const userId = userIdInput.value.trim();
             if (!userId) {
@@ -199,20 +206,16 @@
                 }
             };
 
-            // Notify the signaling server about the join
             sendWebSocketMessage({ action: 'join', id: userId });
         });
 
-        // Automatically join the session if an ID is in the URL
         const params = new URLSearchParams(window.location.search);
         const viewId = params.get('id');
         if (viewId) {
-            // Hide the sharing controls when viewing a shared screen
             document.getElementById("userId").style.display = "none";
             startShareButton.style.display = "none";
             shareLink.style.display = "none";
 
-            // Connect to the WebSocket server and start viewing
             connectWebSocket().then(() => {
                 sendWebSocketMessage({ action: 'join', id: viewId });
             }).catch(err => {
@@ -221,7 +224,7 @@
         } else {
             connectWebSocket().catch(err => {
                 console.error('Error connecting to WebSocket:', err);
-            }); // Connect WebSocket when page is loaded
+            });
         }
     </script>
 </body>
