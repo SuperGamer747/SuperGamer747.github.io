@@ -35,7 +35,6 @@
     <input type="text" id="userId" placeholder="Enter your ID" />
     <button id="startShare">Start Screen Share</button>
     <button id="startView" style="display:none;">Start Viewing</button>
-    Up date to!
     <div id="shareLink">
         <p>Share this link to view your screen: <a href="" id="link"></a></p>
     </div>
@@ -86,7 +85,8 @@
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify(data));
             } else {
-                console.log('WebSocket not ready, cannot send message yet.');
+                console.log('WebSocket not ready, retrying in 1 second...');
+                setTimeout(() => sendWebSocketMessage(data), 1000);
             }
         }
 
@@ -189,9 +189,14 @@
         const params = new URLSearchParams(window.location.search);
         const viewId = params.get('id');
         if (viewId) {
+            // Hide the sharing controls when viewing a shared screen
+            document.getElementById("userId").style.display = "none";
+            startShareButton.style.display = "none";
+            shareLink.style.display = "none";
+
+            // Connect to the WebSocket server and start viewing
             connectWebSocket().then(() => {
-                userIdInput.value = viewId;
-                startViewButton.click();
+                sendWebSocketMessage({ action: 'join', id: viewId });
             }).catch(err => {
                 console.error('Error connecting to WebSocket:', err);
             });
